@@ -1,4 +1,5 @@
 name: Build EBX Exporter
+# Validates the custom full-tree exporter plugin.
 
 on:
   workflow_dispatch:
