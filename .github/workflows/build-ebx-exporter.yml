@@ -1,0 +1,34 @@
+name: Build EBX Exporter
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - 1.0.6.3
+    paths:
+      - 'Plugins/EbxToXmlPlugin/**'
+      - '.github/workflows/build-ebx-exporter.yml'
+
+jobs:
+  build:
+    runs-on: windows-2022
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Build exporter plugin
+        shell: pwsh
+        run: msbuild .\\Plugins\\EbxToXmlPlugin\\EbxToXmlPlugin.csproj /m /restore /p:Configuration="Release - Final" /p:Platform=x64 /p:SolutionDir="$env:GITHUB_WORKSPACE\\FrostyEditor\\"
+
+      - name: Upload exporter DLL
+        uses: actions/upload-artifact@v4
+        with:
+          name: EbxToXmlPlugin-1.1.0
+          path: |
+            Plugins/EbxToXmlPlugin/bin/Release/Final/EbxToXmlPlugin.dll
+            Plugins/EbxToXmlPlugin/bin/Release/Final/EbxToXmlPlugin.pdb
+          if-no-files-found: error
