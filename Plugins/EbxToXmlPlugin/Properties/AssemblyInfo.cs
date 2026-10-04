@@ -25,5 +25,6 @@ using System.Windows;
 [assembly: PluginAuthor("GalaxyMan2015")]
 [assembly: PluginVersion("1.1.0.0")]
 
-[assembly: RegisterMenuExtension(typeof(EbxToXmlMenuExtension))]\n[assembly: RegisterMenuExtension(typeof(FullEbxTreeExportMenuExtension))]
+[assembly: RegisterMenuExtension(typeof(EbxToXmlMenuExtension))]
+[assembly: RegisterMenuExtension(typeof(FullEbxTreeExportMenuExtension))]
 
