@@ -203,7 +203,7 @@ namespace EbxToXmlPlugin
                                     WriteError(errorWriter, "RES Texture", entry.Name, ex);
                                 }
                             }
-                            else if (isUiResource && entry.ResType == (uint)ResourceType.SvgImage)
+                            else if (entry.ResType == (uint)ResourceType.SvgImage)
                             {
                                 try
                                 {
