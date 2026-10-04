@@ -1,0 +1,90 @@
+name: Publish EBX Exporter 1.3.0
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - 1.0.6.3
+    paths:
+      - '.github/workflows/publish-ebx-exporter-1.3.0.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: windows-2022
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Build plugin
+        shell: pwsh
+        run: |
+          msbuild .\Plugins\EbxToXmlPlugin\EbxToXmlPlugin.csproj /m /restore /p:Configuration="Release - Final" /p:Platform=x64 /p:SolutionDir="$env:GITHUB_WORKSPACE\FrostyEditor\"
+
+      - name: Package plugin
+        shell: pwsh
+        run: |
+          $out = Join-Path $env:GITHUB_WORKSPACE "publish"
+          New-Item -ItemType Directory -Force -Path $out | Out-Null
+
+          $dll = Get-ChildItem -Path "$env:GITHUB_WORKSPACE\Plugins\EbxToXmlPlugin\bin" -Recurse -Filter "EbxToXmlPlugin.dll" |
+            Select-Object -First 1
+
+          if (-not $dll) {
+            throw "EbxToXmlPlugin.dll was not found after build."
+          }
+
+          Copy-Item $dll.FullName (Join-Path $out "EbxToXmlPlugin.dll")
+
+          @"
+          EbxToXmlPlugin 1.3.0
+          Status: Under construction ⚠️
+
+          Install:
+          Copy EbxToXmlPlugin.dll into the Frosty Editor Plugins folder.
+
+          Use:
+          Tools -> Export UI Analysis Pack
+
+          Output:
+          Frosty_UI_Analysis_YYYY-MM-DD-HH-MM-SS.zip
+
+          The compact exporter includes UI EBX XML plus UI RES metadata,
+          including texture dimensions/mips/formats and SVG dimensions.
+          "@ | Set-Content -Path (Join-Path $out "README.txt") -Encoding UTF8
+
+          Compress-Archive -Path "$out\EbxToXmlPlugin.dll","$out\README.txt" -DestinationPath "$env:GITHUB_WORKSPACE\EbxToXmlPlugin-1.3.0.zip" -Force
+
+      - name: Publish GitHub release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $notes = @"
+          ## EbxToXmlPlugin 1.3.0
+
+          **Status: Under construction ⚠️**
+
+          Compact Frosty Editor UI analysis exporter.
+
+          - Exports only UI EBX assets.
+          - Exports only UI RES metadata.
+          - Includes texture width/height, mip count, format and flags.
+          - Includes SVG width/height and shape count.
+          - Automatically creates a compact UI analysis ZIP.
+          - Intended for analysis of Frostbite UI systems such as NFS Heat.
+
+          Install `EbxToXmlPlugin.dll` into Frosty Editor's `Plugins` folder, then use:
+
+          `Tools -> Export UI Analysis Pack`
+
+          This is an unofficial modification of FrostyToolsuite.
+          "@
+
+          gh release create v1.3.0 ".\EbxToXmlPlugin-1.3.0.zip" --repo "${{ github.repository }}" --title "EbxToXmlPlugin 1.3.0 - Under construction ⚠️" --notes "$notes"
