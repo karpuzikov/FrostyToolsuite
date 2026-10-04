@@ -3,6 +3,7 @@ using Frosty.Core;
 using Frosty.Core.Windows;
 using FrostySdk.IO;
 using FrostySdk.Managers;
+using FrostySdk.Resources;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -38,10 +39,18 @@ namespace EbxToXmlPlugin
 
                 int exportedCount = 0;
                 int failedCount = 0;
+                int resCount = 0;
+                int textureCount = 0;
+                int svgCount = 0;
+                int resDecodeFailedCount = 0;
 
                 FrostyTaskWindow.Show("Exporting Full EBX Tree", "", (task) =>
                 {
                     List<EbxAssetEntry> entries = App.AssetManager.EnumerateEbx()
+                        .OrderBy(entry => entry.Name, StringComparer.OrdinalIgnoreCase)
+                        .ToList();
+
+                    List<ResAssetEntry> resEntries = App.AssetManager.EnumerateRes()
                         .OrderBy(entry => entry.Name, StringComparer.OrdinalIgnoreCase)
                         .ToList();
 
@@ -54,26 +63,30 @@ namespace EbxToXmlPlugin
 
                     string treePath = Path.Combine(exportRoot, "tree.txt");
                     string manifestPath = Path.Combine(exportRoot, "assets.tsv");
+                    string resManifestPath = Path.Combine(exportRoot, "res.tsv");
                     string errorsPath = Path.Combine(exportRoot, "errors.txt");
                     string summaryPath = Path.Combine(exportRoot, "summary.txt");
 
+                    int totalWork = Math.Max(1, entries.Count + resEntries.Count);
+                    int workIndex = 0;
+
                     using (StreamWriter treeWriter = CreateWriter(treePath))
                     using (StreamWriter manifestWriter = CreateWriter(manifestPath))
+                    using (StreamWriter resWriter = CreateWriter(resManifestPath))
                     using (StreamWriter errorWriter = CreateWriter(errorsPath))
                     {
                         manifestWriter.WriteLine(
                             "Name\tType\tGuid\tSize\tOriginalSize\tLocation\tSha1\tDependencyCount\tDependencies");
 
-                        int totalCount = entries.Count;
+                        resWriter.WriteLine(
+                            "Name\tType\tResRid\tResTypeHex\tSize\tOriginalSize\tLocation\tSha1\tResMetaHex" +
+                            "\tTextureWidth\tTextureHeight\tTextureDepth\tTextureMipCount\tTextureFirstMip" +
+                            "\tTextureFormat\tTextureFlags\tTextureChunkId\tSvgWidth\tSvgHeight\tSvgShapeCount");
 
-                        for (int index = 0; index < totalCount; index++)
+                        foreach (EbxAssetEntry entry in entries)
                         {
-                            EbxAssetEntry entry = entries[index];
-                            double progress = totalCount == 0
-                                ? 100.0d
-                                : ((index + 1) / (double)totalCount) * 100.0d;
-
-                            task.Update(entry.Name, progress);
+                            workIndex++;
+                            task.Update(entry.Name, (workIndex / (double)totalWork) * 100.0d);
                             treeWriter.WriteLine(entry.Name);
 
                             List<string> dependencyDescriptions = new List<string>();
@@ -130,11 +143,109 @@ namespace EbxToXmlPlugin
                             catch (Exception ex)
                             {
                                 failedCount++;
-                                errorWriter.WriteLine(entry.Name);
-                                errorWriter.WriteLine(ex.ToString());
-                                errorWriter.WriteLine(new string('-', 80));
+                                WriteError(errorWriter, "EBX", entry.Name, ex);
                                 App.Logger.Log("Failed to export {0}: {1}", entry.Name, ex.Message);
                             }
+                        }
+
+                        foreach (ResAssetEntry entry in resEntries)
+                        {
+                            workIndex++;
+                            resCount++;
+                            task.Update("RES: " + entry.Name, (workIndex / (double)totalWork) * 100.0d);
+
+                            string textureWidth = "";
+                            string textureHeight = "";
+                            string textureDepth = "";
+                            string textureMipCount = "";
+                            string textureFirstMip = "";
+                            string textureFormat = "";
+                            string textureFlags = "";
+                            string textureChunkId = "";
+                            string svgWidth = "";
+                            string svgHeight = "";
+                            string svgShapeCount = "";
+
+                            bool isUiResource = entry.Name != null &&
+                                entry.Name.StartsWith("UI/", StringComparison.OrdinalIgnoreCase);
+
+                            if (isUiResource && entry.ResType == (uint)ResourceType.Texture)
+                            {
+                                try
+                                {
+                                    using (Texture texture = App.AssetManager.GetResAs<Texture>(entry))
+                                    {
+                                        if (texture != null)
+                                        {
+                                            textureCount++;
+                                            textureWidth = texture.Width.ToString();
+                                            textureHeight = texture.Height.ToString();
+                                            textureDepth = texture.Depth.ToString();
+                                            textureMipCount = texture.MipCount.ToString();
+                                            textureFirstMip = texture.FirstMip.ToString();
+                                            textureFlags = texture.Flags.ToString();
+                                            textureChunkId = texture.ChunkId.ToString();
+
+                                            try
+                                            {
+                                                textureFormat = texture.PixelFormat;
+                                            }
+                                            catch
+                                            {
+                                                textureFormat = "";
+                                            }
+                                        }
+                                    }
+                                }
+                                catch (Exception ex)
+                                {
+                                    resDecodeFailedCount++;
+                                    WriteError(errorWriter, "RES Texture", entry.Name, ex);
+                                }
+                            }
+                            else if (isUiResource && entry.ResType == (uint)ResourceType.SvgImage)
+                            {
+                                try
+                                {
+                                    using (Stream stream = App.AssetManager.GetRes(entry))
+                                    using (NativeReader reader = new NativeReader(stream))
+                                    {
+                                        svgWidth = reader.ReadFloat().ToString(System.Globalization.CultureInfo.InvariantCulture);
+                                        svgHeight = reader.ReadFloat().ToString(System.Globalization.CultureInfo.InvariantCulture);
+                                        svgShapeCount = reader.ReadInt().ToString();
+                                        svgCount++;
+                                    }
+                                }
+                                catch (Exception ex)
+                                {
+                                    resDecodeFailedCount++;
+                                    WriteError(errorWriter, "RES SvgImage", entry.Name, ex);
+                                }
+                            }
+
+                            resWriter.WriteLine(string.Join("\t", new[]
+                            {
+                                ToTsv(entry.Name),
+                                ToTsv(entry.Type),
+                                entry.ResRid.ToString("X16"),
+                                "0x" + entry.ResType.ToString("X8"),
+                                entry.Size.ToString(),
+                                entry.OriginalSize.ToString(),
+                                entry.Location.ToString(),
+                                ToTsv(entry.Sha1.ToString()),
+                                ToHex(entry.ResMeta),
+                                textureWidth,
+                                textureHeight,
+                                textureDepth,
+                                textureMipCount,
+                                textureFirstMip,
+                                ToTsv(textureFormat),
+                                ToTsv(textureFlags),
+                                textureChunkId,
+                                svgWidth,
+                                svgHeight,
+                                svgShapeCount
+                            }));
                         }
                     }
 
@@ -145,19 +256,27 @@ namespace EbxToXmlPlugin
                         summaryWriter.WriteLine("Total EBX assets: " + (exportedCount + failedCount));
                         summaryWriter.WriteLine("Exported XML assets: " + exportedCount);
                         summaryWriter.WriteLine("Failed XML assets: " + failedCount);
+                        summaryWriter.WriteLine("Total RES assets indexed: " + resCount);
+                        summaryWriter.WriteLine("UI texture resources decoded: " + textureCount);
+                        summaryWriter.WriteLine("UI SVG resources decoded: " + svgCount);
+                        summaryWriter.WriteLine("RES decode failures: " + resDecodeFailedCount);
                         summaryWriter.WriteLine();
                         summaryWriter.WriteLine("Files:");
                         summaryWriter.WriteLine("  XML\\       Full EBX object graphs, preserving the Frostbite asset path.");
-                        summaryWriter.WriteLine("  assets.tsv   Searchable metadata, GUIDs and resolved EBX dependencies.");
+                        summaryWriter.WriteLine("  assets.tsv   Searchable EBX metadata, GUIDs and resolved dependencies.");
+                        summaryWriter.WriteLine("  res.tsv      RES metadata plus decoded UI texture/SVG dimensions.");
                         summaryWriter.WriteLine("  tree.txt     Complete Frostbite EBX asset path list.");
-                        summaryWriter.WriteLine("  errors.txt   Assets that could not be decoded/exported.");
+                        summaryWriter.WriteLine("  errors.txt   EBX export and RES decode failures.");
                     }
                 });
 
                 FrostyMessageBox.Show(
                     "Full EBX tree export complete.\n\n" +
-                    "Exported: " + exportedCount + "\n" +
-                    "Failed: " + failedCount + "\n\n" +
+                    "EBX exported: " + exportedCount + "\n" +
+                    "EBX failed: " + failedCount + "\n" +
+                    "RES indexed: " + resCount + "\n" +
+                    "UI textures decoded: " + textureCount + "\n" +
+                    "UI SVG decoded: " + svgCount + "\n\n" +
                     exportRoot,
                     "Frosty Editor");
             }
@@ -166,6 +285,25 @@ namespace EbxToXmlPlugin
         private static StreamWriter CreateWriter(string path)
         {
             return new StreamWriter(path, false, new UTF8Encoding(false));
+        }
+
+        private static void WriteError(StreamWriter writer, string category, string name, Exception ex)
+        {
+            writer.WriteLine("[" + category + "] " + name);
+            writer.WriteLine(ex.ToString());
+            writer.WriteLine(new string('-', 80));
+        }
+
+        private static string ToHex(byte[] data)
+        {
+            if (data == null || data.Length == 0)
+                return string.Empty;
+
+            StringBuilder builder = new StringBuilder(data.Length * 2);
+            foreach (byte value in data)
+                builder.Append(value.ToString("X2"));
+
+            return builder.ToString();
         }
 
         private static string ToTsv(string value)
