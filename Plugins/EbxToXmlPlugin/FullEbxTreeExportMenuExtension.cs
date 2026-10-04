@@ -7,6 +7,7 @@ using FrostySdk.Resources;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.IO.Compression;
 using System.Linq;
 using System.Text;
 using System.Windows.Forms;
@@ -18,21 +19,21 @@ namespace EbxToXmlPlugin
     {
         public override string TopLevelMenuName => "Tools";
         public override string SubLevelMenuName => null;
-        public override string MenuItemName => "Export Full EBX Tree";
+        public override string MenuItemName => "Export UI Analysis Pack";
         public override ImageSource Icon => EbxToXmlMenuExtension.imageSource;
 
         public override RelayCommand MenuItemClicked => new RelayCommand((o) =>
         {
             using (FolderBrowserDialog fbd = new FolderBrowserDialog())
             {
-                fbd.Description = "Choose where the full EBX tree export will be created.";
+                fbd.Description = "Choose where the compact UI analysis pack will be created.";
 
                 if (fbd.ShowDialog() != DialogResult.OK)
                     return;
 
                 string exportRoot = Path.Combine(
                     fbd.SelectedPath,
-                    "Frosty_EBX_Export_" + DateTime.Now.ToString("yyyy-MM-dd-HH-mm-ss"));
+                    "Frosty_UI_Analysis_" + DateTime.Now.ToString("yyyy-MM-dd-HH-mm-ss"));
 
                 string xmlRoot = Path.Combine(exportRoot, "XML");
                 Directory.CreateDirectory(xmlRoot);
@@ -44,13 +45,15 @@ namespace EbxToXmlPlugin
                 int svgCount = 0;
                 int resDecodeFailedCount = 0;
 
-                FrostyTaskWindow.Show("Exporting Full EBX Tree", "", (task) =>
+                FrostyTaskWindow.Show("Exporting UI Analysis Pack", "", (task) =>
                 {
                     List<EbxAssetEntry> entries = App.AssetManager.EnumerateEbx()
+                        .Where(entry => IsUiPath(entry.Name))
                         .OrderBy(entry => entry.Name, StringComparer.OrdinalIgnoreCase)
                         .ToList();
 
                     List<ResAssetEntry> resEntries = App.AssetManager.EnumerateRes()
+                        .Where(entry => IsUiPath(entry.Name))
                         .OrderBy(entry => entry.Name, StringComparer.OrdinalIgnoreCase)
                         .ToList();
 
@@ -166,10 +169,7 @@ namespace EbxToXmlPlugin
                             string svgHeight = "";
                             string svgShapeCount = "";
 
-                            bool isUiResource = entry.Name != null &&
-                                entry.Name.StartsWith("UI/", StringComparison.OrdinalIgnoreCase);
-
-                            if (isUiResource && entry.ResType == (uint)ResourceType.Texture)
+                            if (entry.ResType == (uint)ResourceType.Texture)
                             {
                                 try
                                 {
@@ -251,12 +251,12 @@ namespace EbxToXmlPlugin
 
                     using (StreamWriter summaryWriter = CreateWriter(summaryPath))
                     {
-                        summaryWriter.WriteLine("Frosty Full EBX Tree Export");
+                        summaryWriter.WriteLine("Frosty UI Analysis Pack");
                         summaryWriter.WriteLine("Created: " + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
-                        summaryWriter.WriteLine("Total EBX assets: " + (exportedCount + failedCount));
+                        summaryWriter.WriteLine("UI EBX assets: " + (exportedCount + failedCount));
                         summaryWriter.WriteLine("Exported XML assets: " + exportedCount);
                         summaryWriter.WriteLine("Failed XML assets: " + failedCount);
-                        summaryWriter.WriteLine("Total RES assets indexed: " + resCount);
+                        summaryWriter.WriteLine("UI RES assets indexed: " + resCount);
                         summaryWriter.WriteLine("UI texture resources decoded: " + textureCount);
                         summaryWriter.WriteLine("UI SVG resources decoded: " + svgCount);
                         summaryWriter.WriteLine("RES decode failures: " + resDecodeFailedCount);
@@ -265,22 +265,39 @@ namespace EbxToXmlPlugin
                         summaryWriter.WriteLine("  XML\\       Full EBX object graphs, preserving the Frostbite asset path.");
                         summaryWriter.WriteLine("  assets.tsv   Searchable EBX metadata, GUIDs and resolved dependencies.");
                         summaryWriter.WriteLine("  res.tsv      RES metadata plus decoded UI texture/SVG dimensions.");
-                        summaryWriter.WriteLine("  tree.txt     Complete Frostbite EBX asset path list.");
+                        summaryWriter.WriteLine("  tree.txt     Complete UI EBX asset path list.");
                         summaryWriter.WriteLine("  errors.txt   EBX export and RES decode failures.");
                     }
                 });
 
+                string zipPath = exportRoot + ".zip";
+                if (File.Exists(zipPath))
+                    File.Delete(zipPath);
+
+                ZipFile.CreateFromDirectory(exportRoot, zipPath, CompressionLevel.Optimal, false);
+
                 FrostyMessageBox.Show(
-                    "Full EBX tree export complete.\n\n" +
+                    "UI analysis pack complete.\n\n" +
                     "EBX exported: " + exportedCount + "\n" +
                     "EBX failed: " + failedCount + "\n" +
                     "RES indexed: " + resCount + "\n" +
                     "UI textures decoded: " + textureCount + "\n" +
                     "UI SVG decoded: " + svgCount + "\n\n" +
-                    exportRoot,
+                    "Folder: " + exportRoot + "\n" +
+                    "ZIP: " + zipPath,
                     "Frosty Editor");
             }
         });
+
+        private static bool IsUiPath(string name)
+        {
+            if (string.IsNullOrWhiteSpace(name))
+                return false;
+
+            return name.Equals("UI", StringComparison.OrdinalIgnoreCase)
+                || name.StartsWith("UI/", StringComparison.OrdinalIgnoreCase)
+                || name.StartsWith("UI\\", StringComparison.OrdinalIgnoreCase);
+        }
 
         private static StreamWriter CreateWriter(string path)
         {
