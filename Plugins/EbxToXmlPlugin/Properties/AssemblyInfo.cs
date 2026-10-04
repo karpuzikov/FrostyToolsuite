@@ -23,7 +23,7 @@ using System.Windows;
 
 [assembly: PluginDisplayName("EBX Export")]
 [assembly: PluginAuthor("GalaxyMan2015")]
-[assembly: PluginVersion("1.2.0.0")]
+[assembly: PluginVersion("1.3.0.0")]
 
 [assembly: RegisterMenuExtension(typeof(EbxToXmlMenuExtension))]
 [assembly: RegisterMenuExtension(typeof(FullEbxTreeExportMenuExtension))]
