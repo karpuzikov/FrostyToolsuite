@@ -26,5 +26,7 @@ using System.Windows;
 [assembly: PluginVersion("1.4.0.0")]
 
 [assembly: RegisterMenuExtension(typeof(EbxToXmlMenuExtension))]
-[assembly: RegisterMenuExtension(typeof(FullEbxTreeExportMenuExtension))]\n[assembly: RegisterMenuExtension(typeof(ApplyNfsHeat4KUiPatchMenuExtension))]\n[assembly: RegisterMenuExtension(typeof(RestoreNfsHeat4KUiPatchMenuExtension))]
+[assembly: RegisterMenuExtension(typeof(FullEbxTreeExportMenuExtension))]
+[assembly: RegisterMenuExtension(typeof(ApplyNfsHeat4KUiPatchMenuExtension))]
+[assembly: RegisterMenuExtension(typeof(RestoreNfsHeat4KUiPatchMenuExtension))]
 
