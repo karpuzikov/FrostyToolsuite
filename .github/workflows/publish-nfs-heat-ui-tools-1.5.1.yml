@@ -1,0 +1,99 @@
+name: Publish NFS Heat UI Tools 1.5.1
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - 1.0.6.3
+    paths:
+      - '.github/workflows/publish-nfs-heat-ui-tools-1.5.1.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: windows-2022
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Build plugin
+        shell: pwsh
+        run: |
+          msbuild .\Plugins\EbxToXmlPlugin\EbxToXmlPlugin.csproj /m /restore /p:Configuration="Release - Final" /p:Platform=x64 /p:SolutionDir="$env:GITHUB_WORKSPACE\FrostyEditor\"
+
+      - name: Package plugin
+        shell: pwsh
+        run: |
+          $out = Join-Path $env:GITHUB_WORKSPACE "publish"
+          New-Item -ItemType Directory -Force -Path $out | Out-Null
+
+          $dll = Get-ChildItem -Path "$env:GITHUB_WORKSPACE\Plugins\EbxToXmlPlugin\bin" -Recurse -Filter "EbxToXmlPlugin.dll" |
+            Select-Object -First 1
+
+          if (-not $dll) {
+            throw "EbxToXmlPlugin.dll was not found after build."
+          }
+
+          Copy-Item $dll.FullName (Join-Path $out "EbxToXmlPlugin.dll")
+
+          @"
+          NFS Heat UI Tools 1.5.1
+          Status: Under construction ⚠️
+
+          Corrected HD tests now modify ScreenLayoutWidth / ScreenLayoutHeight.
+
+          Tools:
+          - Apply POI Icons HD Test
+          - Apply Radar/Map HD Test
+          - Apply Speedometer HD Test
+          - Apply Menu 4K Patch (Known Pattern)
+          - Restore All NFS Heat UI Patch Values
+          - Export UI Analysis Pack
+
+          Button icon smoothing test was removed because the source prompt textures
+          are genuinely low resolution (mostly 64x64 / 128x128).
+          "@ | Set-Content -Path (Join-Path $out "README.txt") -Encoding UTF8
+
+          Compress-Archive -Path "$out\EbxToXmlPlugin.dll","$out\README.txt" -DestinationPath "$env:GITHUB_WORKSPACE\NFS-Heat-UI-Tools-1.5.1.zip" -Force
+
+      - name: Mark 1.5.0 superseded
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release edit v1.5.0 --repo "${{ github.repository }}" --title "NFS Heat UI Tools 1.5.0 - SUPERSEDED" --notes "SUPERSEDED: minimap and speedometer tests targeted the wrong RimeScreenData properties and produced no visual effect. Use v1.5.1 or newer."
+
+      - name: Publish GitHub release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $notes = @"
+          ## NFS Heat UI Tools 1.5.1
+
+          **Status: Under construction ⚠️**
+
+          Corrects the HD tests to modify the actual RimeScreenData runtime fields:
+
+          - **POI Icons HD Test**
+            - UI/MiniMapScreen
+            - ScreenLayout 225x225 -> 450x450
+          - **Radar/Map HD Test**
+            - UI/MiniMapPoiScreen
+            - ScreenLayout 512x512 -> 1024x1024
+          - **Speedometer HD Test**
+            - UI/HUD/Instruments/InstrumentsScreen
+            - ScreenLayout 512x512 -> 1024x1024
+
+          Button icon smoothing was removed because the controller prompt source textures are mostly 64x64 / 128x128 and need actual HD replacement textures for a meaningful improvement.
+
+          Test the three HD patches separately.
+          "@
+
+          gh release create v1.5.1 ".\NFS-Heat-UI-Tools-1.5.1.zip" --repo "${{ github.repository }}" --title "NFS Heat UI Tools 1.5.1 - Under construction ⚠️" --notes "$notes"
