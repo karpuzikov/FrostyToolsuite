@@ -28,7 +28,7 @@ jobs:
       - name: Upload exporter DLL
         uses: actions/upload-artifact@v4
         with:
-          name: NFS-Heat-UI-Tools-1.4.1
+          name: NFS-Heat-UI-Tools-1.5.0
           path: |
             Plugins/EbxToXmlPlugin/bin/Release/Final/EbxToXmlPlugin.dll
             Plugins/EbxToXmlPlugin/bin/Release/Final/EbxToXmlPlugin.pdb
