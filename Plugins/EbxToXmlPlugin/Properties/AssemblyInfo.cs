@@ -23,10 +23,12 @@ using System.Windows;
 
 [assembly: PluginDisplayName("NFS Heat UI Tools")]
 [assembly: PluginAuthor("GalaxyMan2015")]
-[assembly: PluginVersion("1.4.1.0")]
+[assembly: PluginVersion("1.5.0.0")]
 
 [assembly: RegisterMenuExtension(typeof(EbxToXmlMenuExtension))]
 [assembly: RegisterMenuExtension(typeof(FullEbxTreeExportMenuExtension))]
 [assembly: RegisterMenuExtension(typeof(ApplyNfsHeat4KUiPatchMenuExtension))]
+[assembly: RegisterMenuExtension(typeof(ApplyNfsHeatMinimapHdPatchMenuExtension))]
+[assembly: RegisterMenuExtension(typeof(ApplyNfsHeatSpeedometerHdPatchMenuExtension))]
+[assembly: RegisterMenuExtension(typeof(ApplyNfsHeatButtonIconSmoothingMenuExtension))]
 [assembly: RegisterMenuExtension(typeof(RestoreNfsHeat4KUiPatchMenuExtension))]
-
