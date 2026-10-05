@@ -21,10 +21,10 @@ using System.Windows;
 // The following GUID is for the ID of the typelib if this project is exposed to COM
 [assembly: Guid("4b612468-9b6a-4304-88a5-055c3575eb3d")]
 
-[assembly: PluginDisplayName("EBX Export")]
+[assembly: PluginDisplayName("NFS Heat UI Tools")]
 [assembly: PluginAuthor("GalaxyMan2015")]
-[assembly: PluginVersion("1.3.0.0")]
+[assembly: PluginVersion("1.4.0.0")]
 
 [assembly: RegisterMenuExtension(typeof(EbxToXmlMenuExtension))]
-[assembly: RegisterMenuExtension(typeof(FullEbxTreeExportMenuExtension))]
+[assembly: RegisterMenuExtension(typeof(FullEbxTreeExportMenuExtension))]\n[assembly: RegisterMenuExtension(typeof(ApplyNfsHeat4KUiPatchMenuExtension))]\n[assembly: RegisterMenuExtension(typeof(RestoreNfsHeat4KUiPatchMenuExtension))]
 
