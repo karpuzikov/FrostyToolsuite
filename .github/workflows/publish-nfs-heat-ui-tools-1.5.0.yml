@@ -1,0 +1,100 @@
+name: Publish NFS Heat UI Tools 1.5.0
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - 1.0.6.3
+    paths:
+      - '.github/workflows/publish-nfs-heat-ui-tools-1.5.0.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: windows-2022
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Build plugin
+        shell: pwsh
+        run: |
+          msbuild .\Plugins\EbxToXmlPlugin\EbxToXmlPlugin.csproj /m /restore /p:Configuration="Release - Final" /p:Platform=x64 /p:SolutionDir="$env:GITHUB_WORKSPACE\FrostyEditor\"
+
+      - name: Package plugin
+        shell: pwsh
+        run: |
+          $out = Join-Path $env:GITHUB_WORKSPACE "publish"
+          New-Item -ItemType Directory -Force -Path $out | Out-Null
+
+          $dll = Get-ChildItem -Path "$env:GITHUB_WORKSPACE\Plugins\EbxToXmlPlugin\bin" -Recurse -Filter "EbxToXmlPlugin.dll" |
+            Select-Object -First 1
+
+          if (-not $dll) {
+            throw "EbxToXmlPlugin.dll was not found after build."
+          }
+
+          Copy-Item $dll.FullName (Join-Path $out "EbxToXmlPlugin.dll")
+
+          @"
+          NFS Heat UI Tools 1.5.0
+          Status: Under construction ⚠️
+
+          Tools:
+          - Apply Minimap/Radar HD Test
+          - Apply Speedometer HD Test
+          - Apply Button Icon Smoothing Test
+          - Apply Menu 4K Patch (Known Pattern)
+          - Restore All NFS Heat UI Patch Values
+          - Export UI Analysis Pack
+
+          Important:
+          Test Minimap/Radar HD and Speedometer HD separately.
+          1.4.0 changed too many subsystems at once and could prevent the game from starting.
+          "@ | Set-Content -Path (Join-Path $out "README.txt") -Encoding UTF8
+
+          Compress-Archive -Path "$out\EbxToXmlPlugin.dll","$out\README.txt" -DestinationPath "$env:GITHUB_WORKSPACE\NFS-Heat-UI-Tools-1.5.0.zip" -Force
+
+      - name: Mark 1.4.0 broken
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release edit v1.4.0 --repo "${{ github.repository }}" --title "NFS Heat UI Tools 1.4.0 - BROKEN" --notes "BROKEN: this build can prevent NFS Heat from starting. Use v1.5.0 or newer."
+
+      - name: Publish GitHub release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $notes = @"
+          ## NFS Heat UI Tools 1.5.0
+
+          **Status: Under construction ⚠️**
+
+          Targeted HD tests based on the analyzed NFS Heat UI render chain.
+
+          ### Tools
+          - **Apply Minimap/Radar HD Test**
+            - UI/MiniMapScreen: 225x225 -> 450x450
+            - UI/MiniMapPoiScreen: 512x512 -> 1024x1024
+          - **Apply Speedometer HD Test**
+            - UI/HUD/Instruments/InstrumentsScreen: 512x512 -> 1024x1024
+          - **Apply Button Icon Smoothing Test**
+            - enables SmoothEdges in UI/ButtonPromptIcon
+          - **Apply Menu 4K Patch (Known Pattern)**
+          - **Restore All NFS Heat UI Patch Values**
+          - **Export UI Analysis Pack**
+
+          Test the Minimap/Radar and Speedometer patches separately.
+
+          The POI source icons are generally 256x256, but the POI render chain passes through a 225x225 off-screen screen before being displayed, which is a likely source of visible pixelation.
+          "@
+
+          gh release create v1.5.0 ".\NFS-Heat-UI-Tools-1.5.0.zip" --repo "${{ github.repository }}" --title "NFS Heat UI Tools 1.5.0 - Under construction ⚠️" --notes "$notes"
