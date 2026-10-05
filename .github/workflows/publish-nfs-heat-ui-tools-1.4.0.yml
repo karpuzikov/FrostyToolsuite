@@ -1,0 +1,92 @@
+name: Publish NFS Heat UI Tools 1.4.0
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - 1.0.6.3
+    paths:
+      - '.github/workflows/publish-nfs-heat-ui-tools-1.4.0.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: windows-2022
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Build plugin
+        shell: pwsh
+        run: |
+          msbuild .\Plugins\EbxToXmlPlugin\EbxToXmlPlugin.csproj /m /restore /p:Configuration="Release - Final" /p:Platform=x64 /p:SolutionDir="$env:GITHUB_WORKSPACE\FrostyEditor\"
+
+      - name: Package plugin
+        shell: pwsh
+        run: |
+          $out = Join-Path $env:GITHUB_WORKSPACE "publish"
+          New-Item -ItemType Directory -Force -Path $out | Out-Null
+
+          $dll = Get-ChildItem -Path "$env:GITHUB_WORKSPACE\Plugins\EbxToXmlPlugin\bin" -Recurse -Filter "EbxToXmlPlugin.dll" |
+            Select-Object -First 1
+
+          if (-not $dll) {
+            throw "EbxToXmlPlugin.dll was not found after build."
+          }
+
+          Copy-Item $dll.FullName (Join-Path $out "EbxToXmlPlugin.dll")
+
+          @"
+          NFS Heat UI Tools 1.4.0
+          Status: Under construction ⚠️
+
+          Install:
+          Copy EbxToXmlPlugin.dll into the Frosty Editor Plugins folder.
+
+          Tools menu:
+          - Apply NFS Heat 4K UI Patch
+          - Restore NFS Heat UI Patch Values
+          - Export UI Analysis Pack
+
+          The 4K patch currently targets:
+          - 1920x1080 MenuWidgetData -> 3840x2160
+          - 256x256 widget references -> 512x512 when UseWidgetWidth/Height are enabled
+          - 13 confirmed Rime screen/render targets -> 2x resolution
+          - FontDpiScale 1 -> 2
+          - GlyphCacheSize 1024 -> 2048
+          - GlyphCacheSizeLowEnd 256 -> 512
+          "@ | Set-Content -Path (Join-Path $out "README.txt") -Encoding UTF8
+
+          Compress-Archive -Path "$out\EbxToXmlPlugin.dll","$out\README.txt" -DestinationPath "$env:GITHUB_WORKSPACE\NFS-Heat-UI-Tools-1.4.0.zip" -Force
+
+      - name: Publish GitHub release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $notes = @"
+          ## NFS Heat UI Tools 1.4.0
+
+          **Status: Under construction ⚠️**
+
+          Adds a one-click experimental 4K UI patcher for Need for Speed Heat.
+
+          ### Tools
+          - **Apply NFS Heat 4K UI Patch**
+          - **Restore NFS Heat UI Patch Values**
+          - **Export UI Analysis Pack**
+
+          The patch is based on the analyzed NFS Heat UI asset tree and only changes confirmed resolution/cache targets. It does not blindly scale all UI coordinates.
+
+          Install `EbxToXmlPlugin.dll` into Frosty Editor's `Plugins` folder.
+
+          After applying the patch, save/export the Frosty project as a mod and test in-game.
+          "@
+
+          gh release create v1.4.0 ".\NFS-Heat-UI-Tools-1.4.0.zip" --repo "${{ github.repository }}" --title "NFS Heat UI Tools 1.4.0 - Under construction ⚠️" --notes "$notes"
