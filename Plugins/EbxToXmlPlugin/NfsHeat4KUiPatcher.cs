@@ -1,7 +1,6 @@
 ﻿using Frosty.Controls;
 using Frosty.Core;
 using Frosty.Core.Windows;
-using FrostySdk;
 using FrostySdk.IO;
 using FrostySdk.Managers;
 using System;
@@ -27,7 +26,8 @@ namespace EbxToXmlPlugin
 
     internal static class NfsHeat4KUiPatcher
     {
-        private static readonly Dictionary<string, ScreenResolutionRule> ScreenRules =
+        // 1.4.0 touched these. Keep the complete list so Restore can undo that build.
+        private static readonly Dictionary<string, ScreenResolutionRule> LegacyScreenRules =
             new Dictionary<string, ScreenResolutionRule>(StringComparer.OrdinalIgnoreCase)
             {
                 { "UI/InteractionPointScreenData", new ScreenResolutionRule(1920, 1080) },
@@ -45,161 +45,334 @@ namespace EbxToXmlPlugin
                 { "UI/Test/TempGarageMenuScreenData", new ScreenResolutionRule(1920, 1080) }
             };
 
-        public static PatchResult Apply()
-        {
-            return Patch(false);
-        }
-
-        public static PatchResult Restore()
-        {
-            return Patch(true);
-        }
-
-        private static PatchResult Patch(bool restore)
+        public static PatchResult ApplyMenuSafe()
         {
             PatchResult result = new PatchResult();
 
             List<EbxAssetEntry> entries = App.AssetManager.EnumerateEbx()
-                .Where(entry => restore ? IsUiPath(entry.Name) : IsMenuPath(entry.Name))
+                .Where(entry => IsMenuPath(entry.Name))
                 .OrderBy(entry => entry.Name, StringComparer.OrdinalIgnoreCase)
                 .ToList();
 
-            FrostyTaskWindow.Show(
-                restore ? "Restoring NFS Heat 4K UI Patch" : "Applying NFS Heat 4K UI Patch",
-                "",
-                (task) =>
+            FrostyTaskWindow.Show("Applying NFS Heat Menu 4K Patch", "", (task) =>
+            {
+                int total = Math.Max(1, entries.Count);
+
+                for (int index = 0; index < entries.Count; index++)
                 {
-                    int total = Math.Max(1, entries.Count);
+                    EbxAssetEntry entry = entries[index];
+                    task.Update(entry.Name, ((index + 1) / (double)total) * 100.0d);
 
-                    for (int index = 0; index < entries.Count; index++)
+                    try
                     {
-                        EbxAssetEntry entry = entries[index];
-                        task.Update(entry.Name, ((index + 1) / (double)total) * 100.0d);
+                        EbxAsset asset = App.AssetManager.GetEbx(entry);
+                        if (asset == null || !asset.IsValid)
+                            continue;
 
-                        try
+                        bool changed = false;
+
+                        foreach (object obj in asset.Objects)
                         {
-                            EbxAsset asset = App.AssetManager.GetEbx(entry);
-                            if (asset == null || !asset.IsValid)
+                            if (obj == null)
                                 continue;
 
-                            bool changed = false;
+                            string typeName = obj.GetType().Name;
 
-                            foreach (object obj in asset.Objects)
+                            if (typeName == "MenuWidgetData" &&
+                                TrySetDimensions(obj, 1920, 1080, 3840, 2160))
                             {
-                                if (obj == null)
-                                    continue;
-
-                                string typeName = obj.GetType().Name;
-
-                                if (typeName == "MenuWidgetData")
-                                {
-                                    if (restore)
-                                    {
-                                        if (TrySetDimensions(obj, 3840, 2160, 1920, 1080))
-                                        {
-                                            changed = true;
-                                            result.MenuWidgets++;
-                                        }
-                                    }
-                                    else
-                                    {
-                                        if (TrySetDimensions(obj, 1920, 1080, 3840, 2160))
-                                        {
-                                            changed = true;
-                                            result.MenuWidgets++;
-                                        }
-                                    }
-                                }
-                                else if (typeName == "RimeWidgetReferenceElementData")
-                                {
-                                    bool useWidgetWidth;
-                                    bool useWidgetHeight;
-
-                                    if (TryGetBool(obj, "UseWidgetWidth", out useWidgetWidth) &&
-                                        TryGetBool(obj, "UseWidgetHeight", out useWidgetHeight) &&
-                                        useWidgetWidth && useWidgetHeight)
-                                    {
-                                        if (restore)
-                                        {
-                                            if (TrySetDimensions(obj, 512, 512, 256, 256))
-                                            {
-                                                changed = true;
-                                                result.WidgetReferences++;
-                                            }
-                                        }
-                                        else
-                                        {
-                                            if (TrySetDimensions(obj, 256, 256, 512, 512))
-                                            {
-                                                changed = true;
-                                                result.WidgetReferences++;
-                                            }
-                                        }
-                                    }
-                                }
-                                else if (restore &&
-                                         typeName == "RimeFontConfiguration" &&
-                                         entry.Name.Equals("UI/Fonts/FontConfiguration", StringComparison.OrdinalIgnoreCase))
-                                {
-                                    bool fontChanged = false;
-                                    fontChanged |= TrySetNumber(obj, "FontDpiScale", 2, 1);
-                                    fontChanged |= TrySetNumber(obj, "GlyphCacheSize", 2048, 1024);
-                                    fontChanged |= TrySetNumber(obj, "GlyphCacheSizeLowEnd", 512, 256);
-
-                                    if (fontChanged)
-                                    {
-                                        changed = true;
-                                        result.FontConfigurations++;
-                                    }
-                                }
+                                changed = true;
+                                result.MenuWidgets++;
                             }
-
-                            if (restore)
+                            else if (typeName == "RimeWidgetReferenceElementData")
                             {
-                                ScreenResolutionRule screenRule;
-                                if (ScreenRules.TryGetValue(entry.Name, out screenRule))
+                                bool useWidgetWidth;
+                                bool useWidgetHeight;
+
+                                if (TryGetBool(obj, "UseWidgetWidth", out useWidgetWidth) &&
+                                    TryGetBool(obj, "UseWidgetHeight", out useWidgetHeight) &&
+                                    useWidgetWidth && useWidgetHeight &&
+                                    TrySetDimensions(obj, 256, 256, 512, 512))
                                 {
-                                    foreach (object obj in asset.Objects)
-                                    {
-                                        if (obj == null || obj.GetType().Name != "RimeScreenData")
-                                            continue;
-
-                                        bool screenChanged = TrySetDimensions(
-                                            obj,
-                                            screenRule.Width * 2,
-                                            screenRule.Height * 2,
-                                            screenRule.Width,
-                                            screenRule.Height);
-
-                                        if (screenChanged)
-                                        {
-                                            changed = true;
-                                            result.RimeScreens++;
-                                        }
-                                    }
+                                    changed = true;
+                                    result.WidgetReferences++;
                                 }
-                            }
-
-                            if (changed)
-                            {
-                                asset.Update();
-                                App.AssetManager.ModifyEbx(entry.Name, asset);
-                                result.AssetsModified++;
                             }
                         }
-                        catch (Exception ex)
-                        {
-                            result.Errors++;
-                            App.Logger.Log(
-                                "{0} failed for {1}: {2}",
-                                restore ? "4K UI restore" : "4K UI patch",
-                                entry.Name,
-                                ex.Message);
-                        }
+
+                        CommitIfChanged(entry, asset, changed, result);
                     }
-                });
+                    catch (Exception ex)
+                    {
+                        LogError("Menu 4K patch", entry.Name, ex, result);
+                    }
+                }
+            });
 
             return result;
+        }
+
+        public static PatchResult ApplyMinimapHd()
+        {
+            PatchResult result = new PatchResult();
+
+            FrostyTaskWindow.Show("Applying NFS Heat Minimap/Radar HD Patch", "", (task) =>
+            {
+                PatchScreenAsset(
+                    "UI/MiniMapScreen",
+                    225, 225,
+                    450, 450,
+                    task,
+                    0.0d,
+                    result);
+
+                PatchScreenAsset(
+                    "UI/MiniMapPoiScreen",
+                    512, 512,
+                    1024, 1024,
+                    task,
+                    50.0d,
+                    result);
+            });
+
+            return result;
+        }
+
+        public static PatchResult ApplySpeedometerHd()
+        {
+            PatchResult result = new PatchResult();
+
+            FrostyTaskWindow.Show("Applying NFS Heat Speedometer HD Patch", "", (task) =>
+            {
+                PatchScreenAsset(
+                    "UI/HUD/Instruments/InstrumentsScreen",
+                    512, 512,
+                    1024, 1024,
+                    task,
+                    0.0d,
+                    result);
+            });
+
+            return result;
+        }
+
+        public static PatchResult ApplyButtonIconSmoothing()
+        {
+            PatchResult result = new PatchResult();
+            const string assetName = "UI/ButtonPromptIcon";
+
+            FrostyTaskWindow.Show("Applying NFS Heat Button Icon Smoothing", "", (task) =>
+            {
+                task.Update(assetName, 50.0d);
+
+                try
+                {
+                    EbxAssetEntry entry = App.AssetManager.GetEbxEntry(assetName);
+                    if (entry == null)
+                        return;
+
+                    EbxAsset asset = App.AssetManager.GetEbx(entry);
+                    if (asset == null || !asset.IsValid)
+                        return;
+
+                    bool changed = false;
+
+                    foreach (object obj in asset.Objects)
+                    {
+                        if (obj == null || obj.GetType().Name != "RimeTextureElementData")
+                            continue;
+
+                        if (TrySetBool(obj, "SmoothEdges", false, true))
+                        {
+                            changed = true;
+                            result.ButtonIconElements++;
+                        }
+                    }
+
+                    CommitIfChanged(entry, asset, changed, result);
+                    task.Update(assetName, 100.0d);
+                }
+                catch (Exception ex)
+                {
+                    LogError("Button icon smoothing", assetName, ex, result);
+                }
+            });
+
+            return result;
+        }
+
+        public static PatchResult Restore()
+        {
+            PatchResult result = new PatchResult();
+
+            List<EbxAssetEntry> entries = App.AssetManager.EnumerateEbx()
+                .Where(entry => IsUiPath(entry.Name))
+                .OrderBy(entry => entry.Name, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            FrostyTaskWindow.Show("Restoring NFS Heat UI Patch Values", "", (task) =>
+            {
+                int total = Math.Max(1, entries.Count);
+
+                for (int index = 0; index < entries.Count; index++)
+                {
+                    EbxAssetEntry entry = entries[index];
+                    task.Update(entry.Name, ((index + 1) / (double)total) * 100.0d);
+
+                    try
+                    {
+                        EbxAsset asset = App.AssetManager.GetEbx(entry);
+                        if (asset == null || !asset.IsValid)
+                            continue;
+
+                        bool changed = false;
+
+                        foreach (object obj in asset.Objects)
+                        {
+                            if (obj == null)
+                                continue;
+
+                            string typeName = obj.GetType().Name;
+
+                            if (typeName == "MenuWidgetData" &&
+                                TrySetDimensions(obj, 3840, 2160, 1920, 1080))
+                            {
+                                changed = true;
+                                result.MenuWidgets++;
+                            }
+                            else if (typeName == "RimeWidgetReferenceElementData" &&
+                                     TrySetDimensions(obj, 512, 512, 256, 256))
+                            {
+                                changed = true;
+                                result.WidgetReferences++;
+                            }
+                            else if (typeName == "RimeFontConfiguration" &&
+                                     entry.Name.Equals("UI/Fonts/FontConfiguration", StringComparison.OrdinalIgnoreCase))
+                            {
+                                bool fontChanged = false;
+                                fontChanged |= TrySetNumber(obj, "FontDpiScale", 2, 1);
+                                fontChanged |= TrySetNumber(obj, "GlyphCacheSize", 2048, 1024);
+                                fontChanged |= TrySetNumber(obj, "GlyphCacheSizeLowEnd", 512, 256);
+
+                                if (fontChanged)
+                                {
+                                    changed = true;
+                                    result.FontConfigurations++;
+                                }
+                            }
+                            else if (entry.Name.Equals("UI/ButtonPromptIcon", StringComparison.OrdinalIgnoreCase) &&
+                                     typeName == "RimeTextureElementData" &&
+                                     TrySetBool(obj, "SmoothEdges", true, false))
+                            {
+                                changed = true;
+                                result.ButtonIconElements++;
+                            }
+                        }
+
+                        ScreenResolutionRule rule;
+                        if (LegacyScreenRules.TryGetValue(entry.Name, out rule))
+                        {
+                            foreach (object obj in asset.Objects)
+                            {
+                                if (obj == null || obj.GetType().Name != "RimeScreenData")
+                                    continue;
+
+                                if (TrySetDimensions(
+                                    obj,
+                                    rule.Width * 2,
+                                    rule.Height * 2,
+                                    rule.Width,
+                                    rule.Height))
+                                {
+                                    changed = true;
+                                    result.RimeScreens++;
+                                }
+                            }
+                        }
+
+                        CommitIfChanged(entry, asset, changed, result);
+                    }
+                    catch (Exception ex)
+                    {
+                        LogError("UI restore", entry.Name, ex, result);
+                    }
+                }
+            });
+
+            return result;
+        }
+
+        private static void PatchScreenAsset(
+            string assetName,
+            double expectedWidth,
+            double expectedHeight,
+            double newWidth,
+            double newHeight,
+            dynamic task,
+            double progress,
+            PatchResult result)
+        {
+            task.Update(assetName, progress);
+
+            try
+            {
+                EbxAssetEntry entry = App.AssetManager.GetEbxEntry(assetName);
+                if (entry == null)
+                    return;
+
+                EbxAsset asset = App.AssetManager.GetEbx(entry);
+                if (asset == null || !asset.IsValid)
+                    return;
+
+                bool changed = false;
+
+                foreach (object obj in asset.Objects)
+                {
+                    if (obj == null || obj.GetType().Name != "RimeScreenData")
+                        continue;
+
+                    if (TrySetDimensions(
+                        obj,
+                        expectedWidth,
+                        expectedHeight,
+                        newWidth,
+                        newHeight))
+                    {
+                        changed = true;
+                        result.RimeScreens++;
+                    }
+                }
+
+                CommitIfChanged(entry, asset, changed, result);
+            }
+            catch (Exception ex)
+            {
+                LogError("HD render-target patch", assetName, ex, result);
+            }
+        }
+
+        private static void CommitIfChanged(
+            EbxAssetEntry entry,
+            EbxAsset asset,
+            bool changed,
+            PatchResult result)
+        {
+            if (!changed)
+                return;
+
+            asset.Update();
+            App.AssetManager.ModifyEbx(entry.Name, asset);
+            result.AssetsModified++;
+        }
+
+        private static void LogError(
+            string operation,
+            string assetName,
+            Exception ex,
+            PatchResult result)
+        {
+            result.Errors++;
+            App.Logger.Log("{0} failed for {1}: {2}", operation, assetName, ex.Message);
         }
 
         private static bool IsMenuPath(string name)
@@ -258,7 +431,11 @@ namespace EbxToXmlPlugin
             return true;
         }
 
-        private static bool TrySetNumber(object obj, string propertyName, double expectedValue, double newValue)
+        private static bool TrySetNumber(
+            object obj,
+            string propertyName,
+            double expectedValue,
+            double newValue)
         {
             PropertyInfo property = obj.GetType().GetProperty(propertyName);
 
@@ -277,6 +454,25 @@ namespace EbxToXmlPlugin
                 return false;
 
             property.SetValue(obj, convertedValue);
+            return true;
+        }
+
+        private static bool TrySetBool(
+            object obj,
+            string propertyName,
+            bool expectedValue,
+            bool newValue)
+        {
+            PropertyInfo property = obj.GetType().GetProperty(propertyName);
+
+            if (property == null || !property.CanRead || !property.CanWrite)
+                return false;
+
+            object rawValue = property.GetValue(obj);
+            if (!(rawValue is bool) || (bool)rawValue != expectedValue)
+                return false;
+
+            property.SetValue(obj, newValue);
             return true;
         }
 
@@ -321,7 +517,10 @@ namespace EbxToXmlPlugin
             }
         }
 
-        private static bool TryConvertNumber(double value, Type propertyType, out object convertedValue)
+        private static bool TryConvertNumber(
+            double value,
+            Type propertyType,
+            out object convertedValue)
         {
             convertedValue = null;
 
@@ -354,6 +553,7 @@ namespace EbxToXmlPlugin
         public int WidgetReferences;
         public int RimeScreens;
         public int FontConfigurations;
+        public int ButtonIconElements;
         public int Errors;
     }
 
@@ -361,22 +561,80 @@ namespace EbxToXmlPlugin
     {
         public override string TopLevelMenuName => "Tools";
         public override string SubLevelMenuName => null;
-        public override string MenuItemName => "Apply NFS Heat 4K UI Patch";
+        public override string MenuItemName => "Apply Menu 4K Patch (Known Pattern)";
         public override ImageSource Icon => EbxToXmlMenuExtension.imageSource;
 
         public override RelayCommand MenuItemClicked => new RelayCommand((o) =>
         {
-            PatchResult result = NfsHeat4KUiPatcher.Apply();
+            PatchResult result = NfsHeat4KUiPatcher.ApplyMenuSafe();
 
             FrostyMessageBox.Show(
-                "NFS Heat 4K UI SAFE patch applied.\n\n" +
+                "Menu 4K patch applied.\n\n" +
                 "Assets modified: " + result.AssetsModified + "\n" +
                 "1920x1080 menu canvases: " + result.MenuWidgets + "\n" +
-                "256x256 menu widget references: " + result.WidgetReferences + "\n" +
+                "256x256 widget references: " + result.WidgetReferences + "\n" +
+                "Errors: " + result.Errors,
+                "NFS Heat UI Tools");
+        });
+    }
+
+    public class ApplyNfsHeatMinimapHdPatchMenuExtension : MenuExtension
+    {
+        public override string TopLevelMenuName => "Tools";
+        public override string SubLevelMenuName => null;
+        public override string MenuItemName => "Apply Minimap/Radar HD Test";
+        public override ImageSource Icon => EbxToXmlMenuExtension.imageSource;
+
+        public override RelayCommand MenuItemClicked => new RelayCommand((o) =>
+        {
+            PatchResult result = NfsHeat4KUiPatcher.ApplyMinimapHd();
+
+            FrostyMessageBox.Show(
+                "Minimap/Radar HD test applied.\n\n" +
+                "Render screens modified: " + result.RimeScreens + "\n" +
                 "Errors: " + result.Errors + "\n\n" +
-                "No font, HUD or Rime render-target changes are applied in 1.4.1.\n" +
-                "Save/export the Frosty project as a mod, then test in-game.",
-                "NFS Heat 4K UI Patch");
+                "This only touches UI/MiniMapScreen and UI/MiniMapPoiScreen.",
+                "NFS Heat UI Tools");
+        });
+    }
+
+    public class ApplyNfsHeatSpeedometerHdPatchMenuExtension : MenuExtension
+    {
+        public override string TopLevelMenuName => "Tools";
+        public override string SubLevelMenuName => null;
+        public override string MenuItemName => "Apply Speedometer HD Test";
+        public override ImageSource Icon => EbxToXmlMenuExtension.imageSource;
+
+        public override RelayCommand MenuItemClicked => new RelayCommand((o) =>
+        {
+            PatchResult result = NfsHeat4KUiPatcher.ApplySpeedometerHd();
+
+            FrostyMessageBox.Show(
+                "Speedometer HD test applied.\n\n" +
+                "Render screens modified: " + result.RimeScreens + "\n" +
+                "Errors: " + result.Errors + "\n\n" +
+                "This only touches UI/HUD/Instruments/InstrumentsScreen.",
+                "NFS Heat UI Tools");
+        });
+    }
+
+    public class ApplyNfsHeatButtonIconSmoothingMenuExtension : MenuExtension
+    {
+        public override string TopLevelMenuName => "Tools";
+        public override string SubLevelMenuName => null;
+        public override string MenuItemName => "Apply Button Icon Smoothing Test";
+        public override ImageSource Icon => EbxToXmlMenuExtension.imageSource;
+
+        public override RelayCommand MenuItemClicked => new RelayCommand((o) =>
+        {
+            PatchResult result = NfsHeat4KUiPatcher.ApplyButtonIconSmoothing();
+
+            FrostyMessageBox.Show(
+                "Button icon smoothing test applied.\n\n" +
+                "Texture elements modified: " + result.ButtonIconElements + "\n" +
+                "Errors: " + result.Errors + "\n\n" +
+                "Note: many controller button source textures are only 64x64 or 128x128.",
+                "NFS Heat UI Tools");
         });
     }
 
@@ -384,7 +642,7 @@ namespace EbxToXmlPlugin
     {
         public override string TopLevelMenuName => "Tools";
         public override string SubLevelMenuName => null;
-        public override string MenuItemName => "Restore NFS Heat UI Patch Values";
+        public override string MenuItemName => "Restore All NFS Heat UI Patch Values";
         public override ImageSource Icon => EbxToXmlMenuExtension.imageSource;
 
         public override RelayCommand MenuItemClicked => new RelayCommand((o) =>
@@ -394,12 +652,13 @@ namespace EbxToXmlPlugin
             FrostyMessageBox.Show(
                 "NFS Heat UI patch values restored.\n\n" +
                 "Assets modified: " + result.AssetsModified + "\n" +
-                "Menu canvases restored: " + result.MenuWidgets + "\n" +
-                "Widget references restored: " + result.WidgetReferences + "\n" +
-                "Rime screens/render targets restored: " + result.RimeScreens + "\n" +
-                "Font configuration restored: " + result.FontConfigurations + "\n" +
+                "Menu canvases: " + result.MenuWidgets + "\n" +
+                "Widget references: " + result.WidgetReferences + "\n" +
+                "Render screens: " + result.RimeScreens + "\n" +
+                "Font configuration: " + result.FontConfigurations + "\n" +
+                "Button icon elements: " + result.ButtonIconElements + "\n" +
                 "Errors: " + result.Errors,
-                "NFS Heat 4K UI Patch");
+                "NFS Heat UI Tools");
         });
     }
 }
