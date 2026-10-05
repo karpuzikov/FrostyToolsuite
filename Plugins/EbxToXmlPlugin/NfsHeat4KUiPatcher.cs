@@ -112,11 +112,11 @@ namespace EbxToXmlPlugin
             return result;
         }
 
-        public static PatchResult ApplyMinimapHd()
+        public static PatchResult ApplyPoiIconsHd()
         {
             PatchResult result = new PatchResult();
 
-            FrostyTaskWindow.Show("Applying NFS Heat Minimap/Radar HD Patch", "", (task) =>
+            FrostyTaskWindow.Show("Applying NFS Heat POI Icons HD Patch", "", (task) =>
             {
                 PatchScreenAsset(
                     "UI/MiniMapScreen",
@@ -125,13 +125,23 @@ namespace EbxToXmlPlugin
                     task,
                     0.0d,
                     result);
+            });
 
+            return result;
+        }
+
+        public static PatchResult ApplyRadarMapHd()
+        {
+            PatchResult result = new PatchResult();
+
+            FrostyTaskWindow.Show("Applying NFS Heat Radar/Map HD Patch", "", (task) =>
+            {
                 PatchScreenAsset(
                     "UI/MiniMapPoiScreen",
                     512, 512,
                     1024, 1024,
                     task,
-                    50.0d,
+                    0.0d,
                     result);
             });
 
@@ -277,7 +287,7 @@ namespace EbxToXmlPlugin
                                 if (obj == null || obj.GetType().Name != "RimeScreenData")
                                     continue;
 
-                                if (TrySetDimensions(
+                                if (TrySetScreenLayoutDimensions(
                                     obj,
                                     rule.Width * 2,
                                     rule.Height * 2,
@@ -331,7 +341,7 @@ namespace EbxToXmlPlugin
                     if (obj == null || obj.GetType().Name != "RimeScreenData")
                         continue;
 
-                    if (TrySetDimensions(
+                    if (TrySetScreenLayoutDimensions(
                         obj,
                         expectedWidth,
                         expectedHeight,
@@ -392,6 +402,43 @@ namespace EbxToXmlPlugin
             return name.Equals("UI", StringComparison.OrdinalIgnoreCase)
                 || name.StartsWith("UI/", StringComparison.OrdinalIgnoreCase)
                 || name.StartsWith("UI\\", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool TrySetScreenLayoutDimensions(
+            object obj,
+            double expectedWidth,
+            double expectedHeight,
+            double newWidth,
+            double newHeight)
+        {
+            PropertyInfo widthProperty = obj.GetType().GetProperty("ScreenLayoutWidth");
+            PropertyInfo heightProperty = obj.GetType().GetProperty("ScreenLayoutHeight");
+
+            if (widthProperty == null || heightProperty == null ||
+                !widthProperty.CanRead || !widthProperty.CanWrite ||
+                !heightProperty.CanRead || !heightProperty.CanWrite)
+                return false;
+
+            double currentWidth;
+            double currentHeight;
+
+            if (!TryConvertToDouble(widthProperty.GetValue(obj), out currentWidth) ||
+                !TryConvertToDouble(heightProperty.GetValue(obj), out currentHeight))
+                return false;
+
+            if (!NearlyEqual(currentWidth, expectedWidth) || !NearlyEqual(currentHeight, expectedHeight))
+                return false;
+
+            object convertedWidth;
+            object convertedHeight;
+
+            if (!TryConvertNumber(newWidth, widthProperty.PropertyType, out convertedWidth) ||
+                !TryConvertNumber(newHeight, heightProperty.PropertyType, out convertedHeight))
+                return false;
+
+            widthProperty.SetValue(obj, convertedWidth);
+            heightProperty.SetValue(obj, convertedHeight);
+            return true;
         }
 
         private static bool TrySetDimensions(
@@ -578,22 +625,42 @@ namespace EbxToXmlPlugin
         });
     }
 
-    public class ApplyNfsHeatMinimapHdPatchMenuExtension : MenuExtension
+    public class ApplyNfsHeatPoiIconsHdPatchMenuExtension : MenuExtension
     {
         public override string TopLevelMenuName => "Tools";
         public override string SubLevelMenuName => null;
-        public override string MenuItemName => "Apply Minimap/Radar HD Test";
+        public override string MenuItemName => "Apply POI Icons HD Test";
         public override ImageSource Icon => EbxToXmlMenuExtension.imageSource;
 
         public override RelayCommand MenuItemClicked => new RelayCommand((o) =>
         {
-            PatchResult result = NfsHeat4KUiPatcher.ApplyMinimapHd();
+            PatchResult result = NfsHeat4KUiPatcher.ApplyPoiIconsHd();
 
             FrostyMessageBox.Show(
-                "Minimap/Radar HD test applied.\n\n" +
-                "Render screens modified: " + result.RimeScreens + "\n" +
+                "POI Icons HD test applied.\n\n" +
+                "Screen layouts modified: " + result.RimeScreens + "\n" +
                 "Errors: " + result.Errors + "\n\n" +
-                "This only touches UI/MiniMapScreen and UI/MiniMapPoiScreen.",
+                "UI/MiniMapScreen: 225x225 -> 450x450",
+                "NFS Heat UI Tools");
+        });
+    }
+
+    public class ApplyNfsHeatRadarMapHdPatchMenuExtension : MenuExtension
+    {
+        public override string TopLevelMenuName => "Tools";
+        public override string SubLevelMenuName => null;
+        public override string MenuItemName => "Apply Radar/Map HD Test";
+        public override ImageSource Icon => EbxToXmlMenuExtension.imageSource;
+
+        public override RelayCommand MenuItemClicked => new RelayCommand((o) =>
+        {
+            PatchResult result = NfsHeat4KUiPatcher.ApplyRadarMapHd();
+
+            FrostyMessageBox.Show(
+                "Radar/Map HD test applied.\n\n" +
+                "Screen layouts modified: " + result.RimeScreens + "\n" +
+                "Errors: " + result.Errors + "\n\n" +
+                "UI/MiniMapPoiScreen: 512x512 -> 1024x1024",
                 "NFS Heat UI Tools");
         });
     }
@@ -611,29 +678,9 @@ namespace EbxToXmlPlugin
 
             FrostyMessageBox.Show(
                 "Speedometer HD test applied.\n\n" +
-                "Render screens modified: " + result.RimeScreens + "\n" +
+                "Screen layouts modified: " + result.RimeScreens + "\n" +
                 "Errors: " + result.Errors + "\n\n" +
                 "This only touches UI/HUD/Instruments/InstrumentsScreen.",
-                "NFS Heat UI Tools");
-        });
-    }
-
-    public class ApplyNfsHeatButtonIconSmoothingMenuExtension : MenuExtension
-    {
-        public override string TopLevelMenuName => "Tools";
-        public override string SubLevelMenuName => null;
-        public override string MenuItemName => "Apply Button Icon Smoothing Test";
-        public override ImageSource Icon => EbxToXmlMenuExtension.imageSource;
-
-        public override RelayCommand MenuItemClicked => new RelayCommand((o) =>
-        {
-            PatchResult result = NfsHeat4KUiPatcher.ApplyButtonIconSmoothing();
-
-            FrostyMessageBox.Show(
-                "Button icon smoothing test applied.\n\n" +
-                "Texture elements modified: " + result.ButtonIconElements + "\n" +
-                "Errors: " + result.Errors + "\n\n" +
-                "Note: many controller button source textures are only 64x64 or 128x128.",
                 "NFS Heat UI Tools");
         });
     }
