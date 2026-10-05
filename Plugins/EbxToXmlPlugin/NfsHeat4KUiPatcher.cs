@@ -60,7 +60,7 @@ namespace EbxToXmlPlugin
             PatchResult result = new PatchResult();
 
             List<EbxAssetEntry> entries = App.AssetManager.EnumerateEbx()
-                .Where(entry => IsUiPath(entry.Name))
+                .Where(entry => restore ? IsUiPath(entry.Name) : IsMenuPath(entry.Name))
                 .OrderBy(entry => entry.Name, StringComparer.OrdinalIgnoreCase)
                 .ToList();
 
@@ -137,23 +137,14 @@ namespace EbxToXmlPlugin
                                         }
                                     }
                                 }
-                                else if (typeName == "RimeFontConfiguration" &&
+                                else if (restore &&
+                                         typeName == "RimeFontConfiguration" &&
                                          entry.Name.Equals("UI/Fonts/FontConfiguration", StringComparison.OrdinalIgnoreCase))
                                 {
                                     bool fontChanged = false;
-
-                                    if (restore)
-                                    {
-                                        fontChanged |= TrySetNumber(obj, "FontDpiScale", 2, 1);
-                                        fontChanged |= TrySetNumber(obj, "GlyphCacheSize", 2048, 1024);
-                                        fontChanged |= TrySetNumber(obj, "GlyphCacheSizeLowEnd", 512, 256);
-                                    }
-                                    else
-                                    {
-                                        fontChanged |= TrySetNumber(obj, "FontDpiScale", 1, 2);
-                                        fontChanged |= TrySetNumber(obj, "GlyphCacheSize", 1024, 2048);
-                                        fontChanged |= TrySetNumber(obj, "GlyphCacheSizeLowEnd", 256, 512);
-                                    }
+                                    fontChanged |= TrySetNumber(obj, "FontDpiScale", 2, 1);
+                                    fontChanged |= TrySetNumber(obj, "GlyphCacheSize", 2048, 1024);
+                                    fontChanged |= TrySetNumber(obj, "GlyphCacheSizeLowEnd", 512, 256);
 
                                     if (fontChanged)
                                     {
@@ -163,39 +154,28 @@ namespace EbxToXmlPlugin
                                 }
                             }
 
-                            ScreenResolutionRule screenRule;
-                            if (ScreenRules.TryGetValue(entry.Name, out screenRule))
+                            if (restore)
                             {
-                                foreach (object obj in asset.Objects)
+                                ScreenResolutionRule screenRule;
+                                if (ScreenRules.TryGetValue(entry.Name, out screenRule))
                                 {
-                                    if (obj == null || obj.GetType().Name != "RimeScreenData")
-                                        continue;
-
-                                    bool screenChanged;
-
-                                    if (restore)
+                                    foreach (object obj in asset.Objects)
                                     {
-                                        screenChanged = TrySetDimensions(
+                                        if (obj == null || obj.GetType().Name != "RimeScreenData")
+                                            continue;
+
+                                        bool screenChanged = TrySetDimensions(
                                             obj,
                                             screenRule.Width * 2,
                                             screenRule.Height * 2,
                                             screenRule.Width,
                                             screenRule.Height);
-                                    }
-                                    else
-                                    {
-                                        screenChanged = TrySetDimensions(
-                                            obj,
-                                            screenRule.Width,
-                                            screenRule.Height,
-                                            screenRule.Width * 2,
-                                            screenRule.Height * 2);
-                                    }
 
-                                    if (screenChanged)
-                                    {
-                                        changed = true;
-                                        result.RimeScreens++;
+                                        if (screenChanged)
+                                        {
+                                            changed = true;
+                                            result.RimeScreens++;
+                                        }
                                     }
                                 }
                             }
@@ -220,6 +200,15 @@ namespace EbxToXmlPlugin
                 });
 
             return result;
+        }
+
+        private static bool IsMenuPath(string name)
+        {
+            if (string.IsNullOrWhiteSpace(name))
+                return false;
+
+            return name.StartsWith("UI/Menu/", StringComparison.OrdinalIgnoreCase)
+                || name.StartsWith("UI\\Menu\\", StringComparison.OrdinalIgnoreCase);
         }
 
         private static bool IsUiPath(string name)
@@ -380,13 +369,12 @@ namespace EbxToXmlPlugin
             PatchResult result = NfsHeat4KUiPatcher.Apply();
 
             FrostyMessageBox.Show(
-                "NFS Heat 4K UI patch applied.\n\n" +
+                "NFS Heat 4K UI SAFE patch applied.\n\n" +
                 "Assets modified: " + result.AssetsModified + "\n" +
                 "1920x1080 menu canvases: " + result.MenuWidgets + "\n" +
-                "256x256 widget references: " + result.WidgetReferences + "\n" +
-                "Rime screens/render targets: " + result.RimeScreens + "\n" +
-                "Font configuration: " + result.FontConfigurations + "\n" +
+                "256x256 menu widget references: " + result.WidgetReferences + "\n" +
                 "Errors: " + result.Errors + "\n\n" +
+                "No font, HUD or Rime render-target changes are applied in 1.4.1.\n" +
                 "Save/export the Frosty project as a mod, then test in-game.",
                 "NFS Heat 4K UI Patch");
         });
